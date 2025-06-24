@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 import torchvision.utils
 from PIL import Image
-from torch.cuda.amp import GradScaler
+from torch.amp import GradScaler
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 from tqdm import tqdm
@@ -471,7 +471,7 @@ class CustomImageClassDataset(Dataset):
     ):
         super(CustomImageClassDataset, self).__init__()
         self.root_dir = root_dir
-        self.class_list = os.listdir(root_dir)
+        self.class_list = [d for d in os.listdir(root_dir) if not d.startswith('.')]
 
         self.transform = transforms.Compose([
             transforms.Resize((image_size, image_size)),
@@ -485,7 +485,7 @@ class CustomImageClassDataset(Dataset):
         self.image_labels_files_list = list()
         for idx, class_name_folder in enumerate(self.class_list):
             class_path = os.path.join(root_dir, class_name_folder)
-            files_list = os.listdir(class_path)
+            files_list = [d for d in os.listdir(class_path) if not d.startswith('.')]
             for image_file in files_list:
                 self.image_labels_files_list.append(
                     (
@@ -507,7 +507,7 @@ class CustomImageClassDataset(Dataset):
 
 
 class Tester:
-    def __init__(self, device: str = 'cuda', batch_size: int = 4, image_size: int = 64,):
+    def __init__(self, device: str = 'cpu', batch_size: int = 4, image_size: int = 64,):
         self.device = device
         self.batch_size = batch_size
         self.image_size = image_size
@@ -618,7 +618,7 @@ class Trainer:
             accumulation_iters: int = 16,
             sample_count: int = 1,
             num_workers: int = 0,
-            device: str = 'cuda',
+            device: str = 'cpu',
             num_epochs: int = 10000,
             fp16: bool = False,
             save_every: int = 2000,
@@ -804,8 +804,8 @@ class Trainer:
 
 if __name__ == '__main__':
     trainer = Trainer(
-        dataset_path=r'C:\datasets\cars',
-        save_path=r'C:\DeepLearningPytorch\ddpm',
+        dataset_path=r'./datasets',
+        save_path=r'./DeepLearningPytorch/ddpm',
         # checkpoint_path=r'C:\DeepLearningPytorch\ddpm\model_126_0.pt',
         # checkpoint_path_ema=r'C:\DeepLearningPytorch\ddpm\model_ema_126_0.pt',
         # enable_train_mode=False,
@@ -820,7 +820,7 @@ if __name__ == '__main__':
     #     save_path=r'C:\DeepLearningPytorch\ddpm'
     # )
 
-    # tester = Tester(device='cuda')
+    # tester = Tester(device='cpu')
     # tester.test_unet()
     # tester.test_attention()
     # tester.test_jit()
