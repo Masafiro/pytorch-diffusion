@@ -34,6 +34,7 @@ from tqdm import tqdm
 from torch import optim
 from torch.functional import F
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s: %(message)s", level=logging.INFO, datefmt="%I:%M:%S")
 
@@ -637,6 +638,8 @@ class Trainer:
         self.save_path = os.path.join(base_path, run_name)
         pathlib.Path(self.save_path).mkdir(parents=True, exist_ok=True)
         self.logger = SummaryWriter(log_dir=os.path.join(self.save_path, 'logs'))
+        
+        self.losses = [] 
 
         if enable_train_mode:
             diffusion_dataset = CustomImageClassDataset(
@@ -689,6 +692,26 @@ class Trainer:
                 model=self.ema_model,
                 filename=checkpoint_path_ema,
             )
+
+    def plot_and_save_loss_graph(self) -> None:
+        """
+        Plots the training loss on a semi-log scale and saves it to a file.
+        """
+        loss_save_path = os.path.join(self.save_path, 'loss_graph.png')
+        plt.figure(figsize=(12, 6))
+        plt.plot(self.losses)
+
+        # y軸を対数スケール（log scale）に設定 ###
+        plt.yscale('log')
+
+        plt.title('Training Loss Over Steps (Log Scale)')
+        plt.xlabel(f'Steps (x{self.accumulation_iters} iterations)')
+        plt.ylabel('Smooth L1 Loss (Log Scale)')
+        plt.grid(True, which="both", ls="-")
+        
+        plt.savefig(loss_save_path)
+        plt.close()
+        logging.info(f"Loss graph saved to {loss_save_path}")
 
     def sample(
             self,
@@ -762,28 +785,26 @@ class Trainer:
 
                     self.grad_scaler.scale(loss).backward()
 
-                    # if ((batch_idx + 1) % self.accumulation_iters == 0) or ((batch_idx + 1) == len(self.train_loader)):
                     if (batch_idx + 1) % self.accumulation_iters == 0:
                         self.grad_scaler.step(self.optimizer)
                         self.grad_scaler.update()
                         self.optimizer.zero_grad(set_to_none=True)
                         self.ema.ema_step(ema_model=self.ema_model, model=self.unet_model)
 
-                        # if epoch > self.swa_start:
-                        #     self.swa_model.update_parameters(model=self.unet_model)
-                        #     self.swa_scheduler.step()
-                        # else:
-                        #     self.scheduler.step()
+                        current_loss = float(accumulated_minibatch_loss)
+                        self.losses.append(current_loss)
+                        global_step = len(self.losses)
+                        self.logger.add_scalar("Loss/train", current_loss, global_step)
 
-                        # total_loss += (float(accumulated_minibatch_loss) / len(self.train_loader) * self.accumulation_iters)
                         pbar.set_description(
-                            # f'Loss minibatch: {float(accumulated_minibatch_loss):.4f}, total: {total_loss:.4f}'
-                            f'Loss minibatch: {float(accumulated_minibatch_loss):.4f}'
+                            f'Loss minibatch: {current_loss:.4f}'
                         )
                         accumulated_minibatch_loss = 0.0
 
                     if not batch_idx % self.save_every:
                         self.sample(epoch=epoch, batch_idx=batch_idx, sample_count=self.sample_count)
+                        
+                        self.plot_and_save_loss_graph()
 
                         Utils.save_checkpoint(
                             epoch=epoch,
@@ -800,14 +821,25 @@ class Trainer:
                         )
 
             self.scheduler.step()
+        
+        self.plot_and_save_loss_graph()
+        logging.info("Training finished.")
 
 
 if __name__ == '__main__':
     trainer = Trainer(
         dataset_path=r'./datasets',
-        save_path=r'./DeepLearningPytorch/ddpm',
-        # checkpoint_path=r'C:\DeepLearningPytorch\ddpm\model_126_0.pt',
-        # checkpoint_path_ema=r'C:\DeepLearningPytorch\ddpm\model_ema_126_0.pt',
+        save_path=r'./ddpm_results',
+        run_name='run1',
+        device='cuda' if torch.cuda.is_available() else 'cpu',
+        image_size=64,
+        batch_size=2,
+        accumulation_iters=16,
+        num_epochs=500,
+        save_every=1000,
+        noise_steps=500,
+        # checkpoint_path=r'./ddpm_results/run1/model_126_0.pt',
+        # checkpoint_path_ema=r'./ddpm_results/run1/model_ema_126_0.pt',
         # enable_train_mode=False,
     )
     trainer.train()
@@ -817,7 +849,7 @@ if __name__ == '__main__':
     # trainer.sample_gif(
     #     output_name='output8',
     #     sample_count=1,
-    #     save_path=r'C:\DeepLearningPytorch\ddpm'
+    #     save_path=r'./ddpm_results/run1'
     # )
 
     # tester = Tester(device='cpu')
